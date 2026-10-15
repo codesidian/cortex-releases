@@ -35,6 +35,9 @@ jobs:
         run: |
           set -euo pipefail
           eval "$(sed -n '/^RELEASE_PUBKEYS=/p; /^MIN_VERSION=/p; /^minisign_verify(){/,/^}/p' install.sh)"
+          if ! gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::no release published yet"; exit 0
+          fi
           mkdir -p rel && cd rel
           gh release download --repo "$GITHUB_REPOSITORY" --pattern '*'
           minisign_verify manifest.json manifest.json.minisig
