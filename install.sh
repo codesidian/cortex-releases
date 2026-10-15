@@ -144,6 +144,11 @@ WANT_SHA="$(printf '%s' "$LINE" | sed -E 's/.*"sha256"[[:space:]]*:[[:space:]]*"
 VERSION="$(grep '"version"' "$TMP/manifest.json" | head -1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 [ -n "$FILE" ] && [ -n "$WANT_SHA" ] && [ -n "$VERSION" ] || die "could not parse manifest for $TARGET"
 case "$FILE" in */*|*..*) die "unsafe artifact name in manifest: $FILE" ;; esac
+EXPIRES="$(grep '"expires"' "$TMP/manifest.json" | head -1 | sed -E 's/.*"expires"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
+if [ -n "$EXPIRES" ]; then
+  EXP_S="$(date -u -d "$EXPIRES" +%s 2>/dev/null)" || die "bad manifest expires: $EXPIRES"
+  [ "$(date -u +%s)" -le "$EXP_S" ] || die "release manifest expired at $EXPIRES; refusing (possible stale mirror)"
+fi
 [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$VERSION" | sort -V | head -1)" = "$MIN_VERSION" ] \
   || die "release $VERSION is older than this installer's floor $MIN_VERSION; refusing (possible rollback)"
 info "Latest version: ${VERSION:-?} ($FILE)"

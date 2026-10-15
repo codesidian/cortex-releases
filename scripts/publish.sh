@@ -30,6 +30,12 @@ M="$DIR/manifest.json"; S="$DIR/manifest.json.minisig"
 minisign_verify "$M" "$S" || die "manifest signature does not verify against the pinned release key"
 
 VERSION="$(jq -er .version "$M")"
+EXPIRES="$(jq -r '.expires // empty' "$M")"
+if [ -n "$EXPIRES" ]; then
+  [ "$(date -u +%s)" -lt "$(date -u -d "$EXPIRES" +%s)" ] || die "manifest already expired ($EXPIRES); re-sign it"
+else
+  echo "[!] manifest has no expires field; agents won't detect a stale mirror"
+fi
 FILES=("$M" "$S")
 while IFS=$'\t' read -r file size sha; do
   case "$file" in */*|*..*|"") die "unsafe artifact name: $file" ;; esac
