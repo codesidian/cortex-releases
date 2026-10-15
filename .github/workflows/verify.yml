@@ -1,0 +1,52 @@
+# Tamper alarm. Re-verifies the latest release against the pinned release key
+# whenever releases or installers change, and daily. A red run means something
+# in this repository no longer matches what the offline key signed; GitHub
+# emails the repository owner when it fails.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published, edited, deleted]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installers pin the same key as minisign.pub
+        run: |
+          set -euo pipefail
+          key="$(sed -n 2p minisign.pub)"
+          grep -q "^RELEASE_PUBKEYS=\".*$key" install.sh
+          grep -q "$key" install.ps1 || echo "::warning::install.ps1 does not pin the key (Windows verifies via the agent only)"
+
+      - name: Latest release verifies against the pinned key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          eval "$(sed -n '/^RELEASE_PUBKEYS=/p; /^MIN_VERSION=/p; /^minisign_verify(){/,/^}/p' install.sh)"
+          mkdir -p rel && cd rel
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*'
+          minisign_verify manifest.json manifest.json.minisig
+          version="$(jq -er .version manifest.json)"
+          tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          [ "$tag" = "v$version" ] || { echo "latest tag $tag does not match signed version $version"; exit 1; }
+          [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | sort -V | head -1)" = "$MIN_VERSION" ]
+          jq -r '.targets[] | [.file, (.size|tostring), .sha256] | @tsv' manifest.json |
+          while IFS=$'\t' read -r file size sha; do
+            [ "$(wc -c < "$file" | tr -d ' ')" = "$size" ]
+            [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$sha" ]
+            echo "ok $file"
+          done
+          extra="$(comm -13 <( (echo manifest.json; echo manifest.json.minisig; jq -r '.targets[].file' manifest.json) | sort) <(ls | sort))"
+          [ -z "$extra" ] || { echo "unsigned files attached to the release: $extra"; exit 1; }
