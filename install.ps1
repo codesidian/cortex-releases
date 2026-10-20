@@ -337,8 +337,12 @@ try {
   # process can't swap the binary between the hash check and running it.
   $installDir = Join-Path $env:ProgramFiles "Codesidian"
   $installPath = Join-Path $installDir "cortex-agent.exe"
-  $stagePath = Join-Path $installDir "cortex-agent.exe.download"
+  # Must end in .exe: PowerShell hands any other extension to the shell as a
+  # document ("Cannot run a document in the middle of a pipeline").
+  $stagePath = Join-Path $installDir "cortex-agent.download.exe"
   New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+  # Left behind by installers before this fix.
+  Remove-Item -Force (Join-Path $installDir "cortex-agent.exe.download") -ErrorAction SilentlyContinue
   Info "Downloading $file ..."
   Invoke-WebRequest -UseBasicParsing -Uri ("$Base/download/v{0}/{1}" -f $version, $file) -OutFile $stagePath
   $gotSha = (Get-FileHash -Algorithm SHA256 $stagePath).Hash.ToLower()
