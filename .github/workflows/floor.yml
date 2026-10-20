@@ -13,6 +13,12 @@ name: floor
 on:
   release:
     types: [published]
+  # Re-run for an already published release (e.g. to refresh its notes).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.1.8
+        required: true
 
 permissions:
   contents: write
@@ -33,9 +39,10 @@ jobs:
       - name: Verify the release and raise MIN_VERSION
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad tag $TAG"; exit 1; }
           eval "$(sed -n '/^RELEASE_PUBKEYS=/p; /^MIN_VERSION=/p; /^minisign_verify(){/,/^}/p' install.sh)"
           mkdir -p "$RUNNER_TEMP/rel"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel" \
@@ -44,6 +51,15 @@ jobs:
           version="$(jq -er .version "$RUNNER_TEMP/rel/manifest.json")"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad signed version $version"; exit 1; }
           [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG does not match signed version $version"; exit 1; }
+
+          # The draft's notes say it is unsigned; now that the signature
+          # verifies, say so instead.
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body \
+            | sed '/^Signed manifest.json verified/d; s/ *Unsigned until the owner signs manifest\.json with the release YubiKey\.//' \
+            | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$RUNNER_TEMP/notes.md"
+          printf '\nSigned manifest.json verified against the pinned release keys by %s.\n' "$run_url" >> "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
           if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | sort -V | tail -1)" != "$version" ] \
              || [ "$MIN_VERSION" = "$version" ]; then
             echo "floor already $MIN_VERSION; nothing to do"; exit 0
