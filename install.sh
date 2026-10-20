@@ -27,12 +27,14 @@ BASE="${CORTEX_RELEASES_BASE:-https://github.com/codesidian/cortex-releases/rele
 
 # Rollback floor: refuse any signed release older than this, so an old (validly
 # signed but vulnerable) manifest can't be served in place of the latest.
-# Raised by .github/workflows/floor.yml when a release is published.
+# Raised (with install.ps1's $MinVersion) by .github/workflows/floor.yml when a
+# release is published.
 MIN_VERSION="0.1.5"
 INSTALL_DIR="${CORTEX_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="cortex-agent"
 
 # Trusted release signing keys (minisign public key lines). Must match
+# $ReleasePubkeys in install.ps1 and
 # RELEASE_PUBKEY_CURRENT / RELEASE_PUBKEY_NEXT in cortex-agent/src/release_trust.rs.
 RELEASE_PUBKEYS="RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr RWT/8/5g10ZGuhRajdSupsEOmAJLihVNgACDUEOkFw6YP95QuLRcsyJ2"
 
@@ -135,16 +137,23 @@ minisign_verify "$TMP/manifest.json" "$TMP/manifest.json.minisig" \
   || die "release manifest signature does not match the pinned release key; refusing to install"
 ok "Release manifest signature verified (pinned key)"
 
-# Pull this target's filename + expected hash out of the (controlled-format)
-# manifest. One target object per line: "<triple>": { "file": "..", ... "sha256": ".." }
-LINE="$(grep "\"$TARGET\"" "$TMP/manifest.json" || true)"
-[ -n "$LINE" ] || die "no release artifact for $TARGET in manifest (not built yet?)"
-FILE="$(printf '%s' "$LINE" | sed -E 's/.*"file"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-WANT_SHA="$(printf '%s' "$LINE" | sed -E 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-VERSION="$(grep '"version"' "$TMP/manifest.json" | head -1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-[ -n "$FILE" ] && [ -n "$WANT_SHA" ] && [ -n "$VERSION" ] || die "could not parse manifest for $TARGET"
-case "$FILE" in */*|*..*) die "unsafe artifact name in manifest: $FILE" ;; esac
-EXPIRES="$(grep '"expires"' "$TMP/manifest.json" | head -1 | sed -E 's/.*"expires"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
+# Pull this target's filename + expected hash out of the verified manifest
+# without jq (often not installed). Flatten it to one line first: it is
+# pretty-printed, so a target's "file" and "sha256" sit on their own lines. A
+# target object is flat, so it ends at the first "}".
+FLAT="$(tr -d '\n\r' < "$TMP/manifest.json")"
+field(){ printf '%s' "$1" | sed -nE "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/p"; }
+first_field(){ printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed -E 's/.*"([^"]*)"$/\1/'; }
+TOBJ="$(printf '%s' "$FLAT" | grep -oE "\"$TARGET\"[[:space:]]*:[[:space:]]*\{[^}]*\}" | head -1 || true)"
+[ -n "$TOBJ" ] || die "no release artifact for $TARGET in manifest (not built yet?)"
+FILE="$(field "$TOBJ" file)"
+WANT_SHA="$(field "$TOBJ" sha256)"
+VERSION="$(first_field "$FLAT" version || true)"
+EXPIRES="$(first_field "$FLAT" expires || true)"
+printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || die "bad version in manifest: $VERSION"
+printf '%s' "$WANT_SHA" | grep -qE '^[0-9a-f]{64}$' || die "bad sha256 in manifest for $TARGET"
+printf '%s' "$FILE" | grep -qE '^[A-Za-z0-9._-]+$' || die "unsafe artifact name in manifest: $FILE"
+case "$FILE" in *..*) die "unsafe artifact name in manifest: $FILE" ;; esac
 if [ -n "$EXPIRES" ]; then
   EXP_S="$(date -u -d "$EXPIRES" +%s 2>/dev/null)" || die "bad manifest expires: $EXPIRES"
   [ "$(date -u +%s)" -le "$EXP_S" ] || die "release manifest expired at $EXPIRES; refusing (possible stale mirror)"

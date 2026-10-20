@@ -1,8 +1,13 @@
-# Raises install.sh's rollback floor (MIN_VERSION) to each newly published
-# release, so the installer refuses to install anything older than it. Runs
-# only after the release's manifest verifies against the pinned keys: a
-# release can only be published by the owner signing its draft with the
-# release YubiKey (codesidian-infra/release/sign-release.py).
+# Raises the installers' rollback floor (install.sh MIN_VERSION, install.ps1
+# $MinVersion) to each newly published release, so they refuse to install
+# anything older than it. Runs only after the release's manifest verifies
+# against the pinned keys: a release can only be published by the owner
+# signing its draft with the release YubiKey
+# (codesidian-infra/release/sign-release.py).
+#
+# main is protected by a ruleset, so this opens a pull request for the owner
+# to merge rather than pushing. Needs Settings > Actions > General > "Allow
+# GitHub Actions to create and approve pull requests".
 name: floor
 
 on:
@@ -11,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: floor
@@ -20,7 +26,7 @@ jobs:
   raise:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
@@ -36,13 +42,26 @@ jobs:
             --pattern manifest.json --pattern manifest.json.minisig
           minisign_verify "$RUNNER_TEMP/rel/manifest.json" "$RUNNER_TEMP/rel/manifest.json.minisig"
           version="$(jq -er .version "$RUNNER_TEMP/rel/manifest.json")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad signed version $version"; exit 1; }
           [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG does not match signed version $version"; exit 1; }
           if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | sort -V | tail -1)" != "$version" ] \
              || [ "$MIN_VERSION" = "$version" ]; then
             echo "floor already $MIN_VERSION; nothing to do"; exit 0
           fi
           sed -i -E "s/^MIN_VERSION=\"[^\"]*\"/MIN_VERSION=\"$version\"/" install.sh
+          sed -i -E "s/^\\\$MinVersion = \"[^\"]*\"/\\\$MinVersion = \"$version\"/" install.ps1
+          grep -qx "MIN_VERSION=\"$version\"" install.sh && grep -qx "\\\$MinVersion = \"$version\"" install.ps1 \
+            || { echo "::error::could not raise the floor in both installers"; exit 1; }
+          branch="floor/v$version"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "install.sh: raise rollback floor to $version"
-          git push origin HEAD:main
+          git checkout -b "$branch"
+          git commit -am "installers: raise rollback floor to $version"
+          git push --force origin "$branch"
+          if [ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number -q '.[].number')" ]; then
+            echo "floor PR for $branch already open"; exit 0
+          fi
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "Raise the installer floor to $version" \
+            --body "Release $TAG verified against the pinned keys. Merging makes install.sh and install.ps1 refuse anything older than $version."
+          echo "::notice::opened floor PR for $version; merge it to raise the floor"

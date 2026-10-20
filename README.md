@@ -33,5 +33,5 @@ Releases are built by `codesidian/cortex-agent`'s `release` workflow from a
 python sign-release.py v0.1.8      # codesidian-infra/release/
 ```
 
-On publish, `floor` raises `install.sh`'s `MIN_VERSION` and `verify`
+On publish, `floor` opens a PR raising the installers' `MIN_VERSION` and `verify`
 re-checks the release against the pinned keys (also daily).
