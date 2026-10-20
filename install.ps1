@@ -38,7 +38,10 @@ $ErrorActionPreference = "Stop"
 function Info($m){ Write-Host "[*] $m" -ForegroundColor Cyan }
 function Ok($m){   Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m){ Write-Host "[!] $m" -ForegroundColor Yellow }
-function Die($m){  Write-Host "[x] $m" -ForegroundColor Red; exit 1 }
+# throw, not exit: the dashboard one-liner runs this as a scriptblock in the
+# user's own session, where exit closes the PowerShell window before the
+# error can be read. A throw still fails `powershell -File` with exit code 1.
+function Die($m){  Write-Host "[x] $m" -ForegroundColor Red; throw "cortex-agent install failed: $m" }
 
 # Rollback floor: refuse any signed release older than this. Raised together
 # with install.sh's MIN_VERSION by .github/workflows/floor.yml.
