@@ -27,7 +27,7 @@ BASE="${CORTEX_RELEASES_BASE:-https://github.com/codesidian/cortex-releases/rele
 
 # Rollback floor: refuse any signed release older than this, so an old (validly
 # signed but vulnerable) manifest can't be served in place of the latest.
-# Raised by scripts/publish.sh on every release.
+# Raised by .github/workflows/floor.yml when a release is published.
 MIN_VERSION="0.1.5"
 INSTALL_DIR="${CORTEX_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="cortex-agent"
