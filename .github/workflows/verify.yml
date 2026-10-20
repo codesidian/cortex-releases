@@ -20,16 +20,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Installers pin the keys in minisign.pub and minisign-next.pub
+      - name: Installers pin the keys in minisign.pub and minisign-next.pub and share a floor
         run: |
           set -euo pipefail
           for f in minisign.pub minisign-next.pub; do
             key="$(sed -n 2p "$f")"
             grep -qF "$key" <(grep '^RELEASE_PUBKEYS=' install.sh)
-            grep -qF "$key" install.ps1 || echo "::warning::install.ps1 does not pin $f (Windows verifies via the agent only)"
+            grep -qF "\"$key\"" <(sed -n '/^\$ReleasePubkeys = @(/,/^)/p' install.ps1)
           done
+          sh_floor="$(sed -nE 's/^MIN_VERSION="([^"]*)"$/\1/p' install.sh)"
+          ps_floor="$(sed -nE 's/^\$MinVersion = "([^"]*)"$/\1/p' install.ps1)"
+          [ -n "$sh_floor" ] && [ "$sh_floor" = "$ps_floor" ] \
+            || { echo "::error::install.sh floor '$sh_floor' != install.ps1 floor '$ps_floor'"; exit 1; }
 
       - name: Latest release verifies against the pinned key
         env:
