@@ -25,6 +25,13 @@ sha256sum cortex-agent-*   # compare with manifest.json
 
 ## Publish
 
-```bash
-scripts/publish.sh <release-dir>   # manifest.json, manifest.json.minisig, binaries
+Releases are built by `codesidian/cortex-agent`'s `release` workflow from a
+`v*` tag and land here as a **draft**. The owner reviews and signs the draft's
+`manifest.json` with the release YubiKey, which publishes it:
+
 ```
+python sign-release.py v0.1.8      # codesidian-infra/release/
+```
+
+On publish, `floor` raises `install.sh`'s `MIN_VERSION` and `verify`
+re-checks the release against the pinned keys (also daily).
