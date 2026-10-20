@@ -34,7 +34,7 @@ BIN_NAME="cortex-agent"
 
 # Trusted release signing keys (minisign public key lines). Must match
 # RELEASE_PUBKEY_CURRENT / RELEASE_PUBKEY_NEXT in cortex-agent/src/release_trust.rs.
-RELEASE_PUBKEYS="RWSyHQOCOtqWA4cc+sEr3uDeNZc4sxmdZ8LQ9csMzo6hexAKnE40I/vS"
+RELEASE_PUBKEYS="RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr RWT/8/5g10ZGuhRajdSupsEOmAJLihVNgACDUEOkFw6YP95QuLRcsyJ2"
 
 CODE=""; FINGERPRINT=""; API_URL=""; DEV=""
 

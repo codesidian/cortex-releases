@@ -22,12 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installers pin the same key as minisign.pub
+      - name: Installers pin the keys in minisign.pub and minisign-next.pub
         run: |
           set -euo pipefail
-          key="$(sed -n 2p minisign.pub)"
-          grep -q "^RELEASE_PUBKEYS=\".*$key" install.sh
-          grep -q "$key" install.ps1 || echo "::warning::install.ps1 does not pin the key (Windows verifies via the agent only)"
+          for f in minisign.pub minisign-next.pub; do
+            key="$(sed -n 2p "$f")"
+            grep -qF "$key" <(grep '^RELEASE_PUBKEYS=' install.sh)
+            grep -qF "$key" install.ps1 || echo "::warning::install.ps1 does not pin $f (Windows verifies via the agent only)"
+          done
 
       - name: Latest release verifies against the pinned key
         env:
