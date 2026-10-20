@@ -45,7 +45,7 @@ function Die($m){  Write-Host "[x] $m" -ForegroundColor Red; throw "cortex-agent
 
 # Rollback floor: refuse any signed release older than this. Raised together
 # with install.sh's MIN_VERSION by .github/workflows/floor.yml.
-$MinVersion = "0.1.7"
+$MinVersion = "0.1.8"
 
 # Trusted release signing keys (minisign public key lines). Must match
 # RELEASE_PUBKEYS in install.sh and RELEASE_PUBKEY_CURRENT / RELEASE_PUBKEY_NEXT
