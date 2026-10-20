@@ -19,7 +19,7 @@ irm https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.ps
 ## Verify
 
 ```bash
-minisign -Vm manifest.json -p minisign.pub
+minisign -Vm manifest.json -p minisign.pub   # or minisign-next.pub (backup key)
 sha256sum cortex-agent-*   # compare with manifest.json
 ```
 
