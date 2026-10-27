@@ -4,7 +4,7 @@
 #
 #   curl -fsSL -o install.sh https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.sh
 #   less install.sh
-#   sudo bash install.sh --code <ENROLLMENT_CODE> --fingerprint <USER_KEY_FINGERPRINT>
+#   sudo bash install.sh --code <ENROLLMENT_CODE> --fingerprint <USER_KEY_FINGERPRINT> [--policy read-only]
 #
 # Downloads the signed cortex-agent release for this machine, verifies its
 # integrity against the signed release manifest, installs it onto PATH, then
@@ -21,6 +21,10 @@
 # - The --fingerprint is the CR-1 trust anchor for your USER key. This script
 #   only passes it through to `enroll`; it never fetches it from the server.
 #   Verify it matches the fingerprint shown in your dashboard.
+# - A new box gets a local command policy (default: read-only) before it is
+#   enrolled, so a signed command can't use the terminal, scheduled jobs or
+#   write files until someone on this machine allows it. An existing policy
+#   file is never replaced. See `cortex-agent policy show`.
 set -euo pipefail
 
 BASE="${CORTEX_RELEASES_BASE:-https://github.com/codesidian/cortex-releases/releases}"
@@ -32,6 +36,7 @@ BASE="${CORTEX_RELEASES_BASE:-https://github.com/codesidian/cortex-releases/rele
 MIN_VERSION="0.1.9"
 INSTALL_DIR="${CORTEX_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="cortex-agent"
+POLICY="read-only"
 
 # Trusted release signing keys (minisign public key lines). Must match
 # $ReleasePubkeys in install.ps1 and
@@ -52,8 +57,9 @@ while [ $# -gt 0 ]; do
     --api-url)      API_URL="${2:-}"; shift 2 ;;
     --dev)          DEV="--dev"; shift ;;
     --base)         BASE="${2:-}"; shift 2 ;;
+    --policy)       POLICY="${2:-}"; shift 2 ;;
     -h|--help)
-      echo "Usage: sudo bash install.sh --code <CODE> --fingerprint <FP> [--api-url URL] [--dev]"
+      echo "Usage: sudo bash install.sh --code <CODE> --fingerprint <FP> [--policy read-only|monitor-only|full] [--api-url URL] [--dev]"
       exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -61,6 +67,17 @@ done
 
 [ -n "$CODE" ]        || die "missing --code (get it from the dashboard 'Add Agent' dialog)"
 [ -n "$FINGERPRINT" ] || die "missing --fingerprint (shown next to the code in the dashboard)"
+case "$POLICY" in
+  read-only|monitor-only|full) ;;
+  *) die "--policy must be read-only, monitor-only or full" ;;
+esac
+
+# Release layout: GitHub Releases (latest/download/..., download/v<ver>/...)
+# or a flat mirror directory (manifest.json and the binaries side by side).
+case "$BASE" in
+  https://github.com/*/releases) MANIFEST_URL="$BASE/latest/download"; FLAT_MIRROR="" ;;
+  *)                             MANIFEST_URL="$BASE";                 FLAT_MIRROR=1 ;;
+esac
 
 have(){ command -v "$1" >/dev/null 2>&1; }
 have curl || die "curl is required"
@@ -131,8 +148,8 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 # --- fetch + verify manifest -------------------------------------------------
 info "Fetching release manifest ..."
-curl -fsSL "$BASE/latest/download/manifest.json"         -o "$TMP/manifest.json"         || die "cannot fetch manifest"
-curl -fsSL "$BASE/latest/download/manifest.json.minisig" -o "$TMP/manifest.json.minisig" || die "cannot fetch manifest signature"
+curl -fsSL "$MANIFEST_URL/manifest.json"         -o "$TMP/manifest.json"         || die "cannot fetch manifest"
+curl -fsSL "$MANIFEST_URL/manifest.json.minisig" -o "$TMP/manifest.json.minisig" || die "cannot fetch manifest signature"
 minisign_verify "$TMP/manifest.json" "$TMP/manifest.json.minisig" \
   || die "release manifest signature does not match the pinned release key; refusing to install"
 ok "Release manifest signature verified (pinned key)"
@@ -164,7 +181,8 @@ info "Latest version: ${VERSION:-?} ($FILE)"
 
 # --- download binary + integrity check ---------------------------------------
 info "Downloading $FILE ..."
-curl -fsSL "$BASE/download/v$VERSION/$FILE" -o "$TMP/$BIN_NAME" || die "download failed"
+if [ -n "$FLAT_MIRROR" ]; then BIN_URL="$BASE/$FILE"; else BIN_URL="$BASE/download/v$VERSION/$FILE"; fi
+curl -fsSL "$BIN_URL" -o "$TMP/$BIN_NAME" || die "download failed"
 GOT_SHA="$(sha256 "$TMP/$BIN_NAME")"
 [ "$GOT_SHA" = "$WANT_SHA" ] || die "SHA-256 mismatch (expected $WANT_SHA, got $GOT_SHA) — refusing to install"
 ok "SHA-256 verified against signed manifest"
@@ -180,6 +198,18 @@ ok "installed cortex-agent ${VERSION:-} to $INSTALL_DIR"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *) warn "$INSTALL_DIR is not on PATH; add it or invoke $INSTALL_DIR/$BIN_NAME directly." ;;
+esac
+
+# --- local command policy -----------------------------------------------------
+# Written before enrolling, so the agent never runs without one. Only someone
+# on this machine can change it later (cortex-agent policy init --force).
+POLICY_NOW="$("$INSTALL_DIR/$BIN_NAME" policy show 2>/dev/null || true)"
+case "$POLICY_NOW" in
+  "# No policy file"*)
+    "$INSTALL_DIR/$BIN_NAME" policy init --preset "$POLICY" >/dev/null || die "cannot write the local policy"
+    ok "Local policy: $POLICY preset (change it on this machine with: cortex-agent policy init --preset <name> --force)" ;;
+  *)
+    warn "keeping this machine's existing local policy (see: cortex-agent policy show)" ;;
 esac
 
 # --- enroll (installs + starts the service) ----------------------------------
