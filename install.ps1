@@ -11,7 +11,7 @@
 
     irm https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.ps1 -OutFile install.ps1
     notepad install.ps1
-    .\install.ps1 -Code <ENROLLMENT_CODE> -Fingerprint <USER_KEY_FINGERPRINT>
+    .\install.ps1 -Code <ENROLLMENT_CODE> -Fingerprint <USER_KEY_FINGERPRINT> [-Policy read-only]
 
 .NOTES
   SECURITY: the release manifest is signed with an offline Ed25519 (minisign)
@@ -24,6 +24,10 @@
   can't modify; read it before running it.
   The -Fingerprint is the CR-1 trust anchor for your USER key and is only passed
   through to `enroll`; confirm it matches the dashboard.
+  A new machine gets a local command policy (-Policy, default read-only) before
+  it is enrolled, so a signed command can't use the terminal, scheduled jobs or
+  write files until someone on this machine allows it. An existing policy file
+  is never replaced. See `cortex-agent policy show`.
 #>
 [CmdletBinding()]
 param(
@@ -31,6 +35,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Fingerprint,
   [string]$ApiUrl,
   [switch]$Dev,
+  [ValidateSet("read-only", "monitor-only", "full")][string]$Policy = "read-only",
   [string]$Base = "https://github.com/codesidian/cortex-releases/releases"
 )
 
@@ -298,12 +303,17 @@ Info "Target: $Target"
 $tmp = Join-Path $env:TEMP ("cortex-agent-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
+  # Release layout: GitHub Releases (latest/download/..., download/v<ver>/...)
+  # or a flat mirror directory (manifest.json and the binaries side by side).
+  $flatMirror = $Base -notmatch '^https://github\.com/[^/]+/[^/]+/releases$'
+  $manifestUrl = if ($flatMirror) { $Base } else { "$Base/latest/download" }
+
   # --- fetch + verify manifest -----------------------------------------------
   Info "Fetching release manifest ..."
   $manifestPath = Join-Path $tmp "manifest.json"
   $sigPath      = Join-Path $tmp "manifest.json.minisig"
-  Invoke-WebRequest -UseBasicParsing -Uri "$Base/latest/download/manifest.json"         -OutFile $manifestPath
-  Invoke-WebRequest -UseBasicParsing -Uri "$Base/latest/download/manifest.json.minisig" -OutFile $sigPath
+  Invoke-WebRequest -UseBasicParsing -Uri "$manifestUrl/manifest.json"         -OutFile $manifestPath
+  Invoke-WebRequest -UseBasicParsing -Uri "$manifestUrl/manifest.json.minisig" -OutFile $sigPath
 
   # Verify and parse the same bytes, so nothing can swap the file in between.
   $manifestBytes = [IO.File]::ReadAllBytes($manifestPath)
@@ -347,7 +357,8 @@ try {
   # Left behind by installers before this fix.
   Remove-Item -Force (Join-Path $installDir "cortex-agent.exe.download") -ErrorAction SilentlyContinue
   Info "Downloading $file ..."
-  Invoke-WebRequest -UseBasicParsing -Uri ("$Base/download/v{0}/{1}" -f $version, $file) -OutFile $stagePath
+  $binUrl = if ($flatMirror) { "$Base/$file" } else { "$Base/download/v{0}/{1}" -f $version, $file }
+  Invoke-WebRequest -UseBasicParsing -Uri $binUrl -OutFile $stagePath
   $gotSha = (Get-FileHash -Algorithm SHA256 $stagePath).Hash.ToLower()
   if ($gotSha -ne $wantSha) {
     Remove-Item -Force $stagePath -ErrorAction SilentlyContinue
@@ -375,6 +386,18 @@ try {
     [Environment]::SetEnvironmentVariable("Path", "$sysPath;$installDir", "Machine")
     $env:Path = "$env:Path;$installDir"
     Ok "added $installDir to system PATH"
+  }
+
+  # --- local command policy ---------------------------------------------------
+  # Written before enrolling, so the agent never runs without one. Only someone
+  # on this machine can change it later (cortex-agent policy init --force).
+  $policyNow = (& $installPath policy show | Out-String)
+  if ($policyNow.StartsWith("# No policy file")) {
+    & $installPath policy init --preset $Policy | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "cannot write the local policy" }
+    Ok "Local policy: $Policy preset (change it on this machine with: cortex-agent policy init --preset <name> --force)"
+  } else {
+    Warn "keeping this machine's existing local policy (see: cortex-agent policy show)"
   }
 
   # --- enroll (installs + starts the service) --------------------------------

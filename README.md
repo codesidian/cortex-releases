@@ -16,6 +16,15 @@ irm https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.ps
 .\install.ps1 -Code <ENROLLMENT_CODE> -Fingerprint <FINGERPRINT>
 ```
 
+A new machine gets a local command policy before it enrolls: `read-only` by
+default (no terminal, no scheduled jobs, files read-only). Pick another with
+`--policy` / `-Policy` (`read-only`, `monitor-only`, `full`). An existing policy
+is kept. Change it later on the machine itself:
+`cortex-agent policy init --preset full --force`.
+
+`--base` / `-Base` also accepts a flat mirror directory (`manifest.json` and the
+binaries side by side), such as `https://codesidian.com/releases`.
+
 ## Verify
 
 ```bash
