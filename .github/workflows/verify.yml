@@ -59,11 +59,25 @@ jobs:
           tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
           [ "$tag" = "v$version" ] || { echo "latest tag $tag does not match signed version $version"; exit 1; }
           [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | sort -V | head -1)" = "$MIN_VERSION" ]
-          jq -r '.targets[] | [.file, (.size|tostring), .sha256] | @tsv' manifest.json |
+          jq -r '(.targets[], (.installers // {})[]) | [.file, (.size|tostring), .sha256] | @tsv' manifest.json |
           while IFS=$'\t' read -r file size sha; do
+            [[ "$file" =~ ^[A-Za-z0-9._-]+$ ]] && [[ "$file" != *..* ]] || { echo "unsafe file name $file"; exit 1; }
             [ "$(wc -c < "$file" | tr -d ' ')" = "$size" ]
             [ "$(sha256sum "$file" | cut -d' ' -f1)" = "$sha" ]
             echo "ok $file"
           done
-          extra="$(comm -13 <( (echo manifest.json; echo manifest.json.minisig; jq -r '.targets[].file' manifest.json) | sort) <(ls | sort))"
+          # Installers: install.sh carries its own signature, and both must pin
+          # the same keys as this repository's installers.
+          signed="manifest.json.minisig"
+          if jq -e '.installers["install.sh"]' manifest.json >/dev/null; then
+            minisign_verify install.sh install.sh.minisig
+            echo "ok install.sh.minisig"
+            signed="$signed install.sh.minisig"
+            for f in ../minisign.pub ../minisign-next.pub; do
+              key="$(sed -n 2p "$f")"
+              grep -qF "$key" <(grep '^RELEASE_PUBKEYS=' install.sh)
+              grep -qF "\"$key\"" <(sed -n '/^\$ReleasePubkeys = @(/,/^)/p' install.ps1)
+            done
+          fi
+          extra="$(comm -13 <( (echo manifest.json; printf '%s\n' $signed; jq -r '.targets[].file, ((.installers // {})[].file)' manifest.json) | sort) <(ls | sort))"
           [ -z "$extra" ] || { echo "unsigned files attached to the release: $extra"; exit 1; }
