@@ -2,8 +2,9 @@
 #
 # Codesidian cortex-agent installer (Linux).
 #
-#   curl -fsSL -o install.sh https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.sh
-#   less install.sh
+#   curl -fsSLO https://github.com/codesidian/cortex-releases/releases/latest/download/install.sh
+#   curl -fsSLO https://github.com/codesidian/cortex-releases/releases/latest/download/install.sh.minisig
+#   minisign -Vm install.sh -P RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr
 #   sudo bash install.sh --code <ENROLLMENT_CODE> --fingerprint <USER_KEY_FINGERPRINT> [--policy read-only]
 #
 # Downloads the signed cortex-agent release for this machine, verifies its
@@ -17,7 +18,9 @@
 #   tampered manifest or binary on the release host is refused. The binary is
 #   then bound to the verified manifest by SHA-256.
 # - This only helps if this script itself comes from somewhere the release host
-#   can't modify; read it before piping it to a root shell.
+#   can't modify. Each release ships this script with its own signature
+#   (install.sh.minisig) by the same key: check it with minisign as above
+#   before running it as root.
 # - The --fingerprint is the CR-1 trust anchor for your USER key. This script
 #   only passes it through to `enroll`; it never fetches it from the server.
 #   Verify it matches the fingerprint shown in your dashboard.

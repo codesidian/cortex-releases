@@ -9,7 +9,7 @@
 
   Run from an elevated (Administrator) PowerShell:
 
-    irm https://raw.githubusercontent.com/codesidian/cortex-releases/main/install.ps1 -OutFile install.ps1
+    irm https://github.com/codesidian/cortex-releases/releases/latest/download/install.ps1 -OutFile install.ps1
     notepad install.ps1
     .\install.ps1 -Code <ENROLLMENT_CODE> -Fingerprint <USER_KEY_FINGERPRINT> [-Policy read-only]
 
@@ -21,7 +21,8 @@
   then bound to the verified manifest by SHA-256, and `cortex-agent verify`
   re-checks the signature with the agent's embedded key as defence in depth.
   This only helps if this script itself comes from somewhere the release host
-  can't modify; read it before running it.
+  can't modify. Each release lists this script's SHA-256 in its signed
+  manifest.json (installers."install.ps1"); see the README to check it.
   The -Fingerprint is the CR-1 trust anchor for your USER key and is only passed
   through to `enroll`; confirm it matches the dashboard.
   A new machine gets a local command policy (-Policy, default read-only) before

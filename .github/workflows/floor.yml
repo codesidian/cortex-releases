@@ -56,9 +56,30 @@ jobs:
           # verifies, say so instead.
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body \
-            | sed '/^Signed manifest.json verified/d; s/ *Unsigned until the owner signs manifest\.json with the release YubiKey\.//' \
+            | sed '/^Install (check the script first/,$d; /^Signed manifest.json verified/d; s/ *Unsigned until the owner signs manifest\.json with the release YubiKey\.//' \
             | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$RUNNER_TEMP/notes.md"
           printf '\nSigned manifest.json verified against the pinned release keys by %s.\n' "$run_url" >> "$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -qx install.sh.minisig; then
+            # The release key, published here as well as in the README, so a new
+            # machine can check install.sh without trusting codesidian.com.
+            # Name the key that actually signed it (the backup key may have).
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel" \
+              --pattern install.sh --pattern install.sh.minisig
+            minisign_verify "$RUNNER_TEMP/rel/install.sh" "$RUNNER_TEMP/rel/install.sh.minisig"
+            kid() { base64 -d | head -c 10 | tail -c 8 | od -An -tx1 | tr -d ' \n'; }
+            sig_kid="$(sed -n 2p "$RUNNER_TEMP/rel/install.sh.minisig" | kid)"; pub=""
+            for f in minisign.pub minisign-next.pub; do
+              [ "$(sed -n 2p "$f" | kid)" = "$sig_kid" ] && pub="$f"
+            done
+            [ -n "$pub" ] || { echo "::error::install.sh.minisig key is not in minisign*.pub"; exit 1; }
+            {
+              printf '\nInstall (check the script first; key id %s):\n\n```bash\n' "$(sed -n 1p "$pub" | awk '{print $NF}')"
+              printf 'curl -fsSLO https://github.com/%s/releases/download/%s/install.sh\n' "$GITHUB_REPOSITORY" "$TAG"
+              printf 'curl -fsSLO https://github.com/%s/releases/download/%s/install.sh.minisig\n' "$GITHUB_REPOSITORY" "$TAG"
+              printf 'minisign -Vm install.sh -P %s\n' "$(sed -n 2p "$pub")"
+              printf 'sudo bash install.sh --code <CODE> --fingerprint <FINGERPRINT>\n```\n'
+            } >> "$RUNNER_TEMP/notes.md"
+          fi
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
           if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | sort -V | tail -1)" != "$version" ] \
              || [ "$MIN_VERSION" = "$version" ]; then
