@@ -36,7 +36,7 @@ BASE="${CORTEX_RELEASES_BASE:-https://github.com/codesidian/cortex-releases/rele
 # signed but vulnerable) manifest can't be served in place of the latest.
 # Raised (with install.ps1's $MinVersion) by .github/workflows/floor.yml when a
 # release is published.
-MIN_VERSION="0.1.9"
+MIN_VERSION="0.1.10"
 INSTALL_DIR="${CORTEX_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="cortex-agent"
 POLICY="read-only"
