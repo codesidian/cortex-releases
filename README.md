@@ -29,12 +29,14 @@ Needs [minisign](https://jedisct1.github.io/minisign/) (`apt install minisign`,
 ```bash
 curl -fsSLO https://github.com/codesidian/cortex-releases/releases/latest/download/install.sh
 curl -fsSLO https://github.com/codesidian/cortex-releases/releases/latest/download/install.sh.minisig
-minisign -Vm install.sh -P RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr
+minisign -Vm install.sh -P RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr || minisign -Vm install.sh -P RWT/8/5g10ZGuhRajdSupsEOmAJLihVNgACDUEOkFw6YP95QuLRcsyJ2
 sudo bash install.sh --code <ENROLLMENT_CODE> --fingerprint <FINGERPRINT>
 ```
 
-`minisign` must print `Signature and comment signature verified`. If it
-doesn't, stop: the script is not the one the release key signed.
+One of the two `minisign` runs must print `Signature and comment signature
+verified` (the first key is the primary YubiKey, the second the backup; a
+release may be signed by either, and the release notes name which). If neither
+does, stop: the script is not the one a release key signed.
 
 ### Linux (quick)
 
@@ -58,7 +60,7 @@ signed manifest and compare the script's hash with the one it lists:
 
 ```powershell
 foreach ($f in "manifest.json", "manifest.json.minisig") { irm "https://github.com/codesidian/cortex-releases/releases/latest/download/$f" -OutFile $f }
-minisign -Vm manifest.json -P RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr
+minisign -Vm manifest.json -P RWTMOMNGPMMYeyHWCdx4DV3efXIN/mUZ/4HpLKOV2bT5A7/L8uE3KBlr   # or the backup key RWT/8/5g10ZGuhRajdSupsEOmAJLihVNgACDUEOkFw6YP95QuLRcsyJ2
 (Get-FileHash install.ps1).Hash.ToLower() -eq (Get-Content -Raw manifest.json | ConvertFrom-Json).installers.'install.ps1'.sha256
 ```
 
