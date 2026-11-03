@@ -1,0 +1,17 @@
+# Keeps the SHA-pinned GitHub Actions in .github/workflows up to date.
+# Dependabot bumps both the commit SHA and the "# vX.Y.Z" comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Don't propose a release until it has been out for a week, so a
+    # compromised or yanked action version has time to be caught upstream.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
